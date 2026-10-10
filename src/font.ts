@@ -34,6 +34,8 @@ const UPM = 1000
 const ASCENDER = 800
 const DESCENDER = -200
 const PX = UPM / SIZE
+/** Grid line (0-25) where the baseline sits; rows below it are the descender area. */
+export const BASELINE_LINE = ASCENDER / PX
 
 function glyphPath(bitmap: Bitmap): opentype.Path {
   const path = new opentype.Path()
