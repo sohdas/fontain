@@ -4,9 +4,9 @@ import { BASELINE_LINE, SIZE, emptyBitmap, type Bitmap } from './font'
 type Tool = 'pencil' | 'line'
 type Cell = { r: number; c: number }
 
-const BRUSH_SIZES = [1, 2, 3, 4, 5]
+const BRUSH_SIZES = [1, 2, 3, 4, 6, 8]
 // Vertical stem guides (grid lines) marking where the left/right strokes of a glyph usually sit
-const STEM_LINES = [5, 20]
+const STEM_LINES = [Math.round(SIZE * 0.2), Math.round(SIZE * 0.8)]
 
 /** Cells on the straight line between two cells (Bresenham). */
 function lineCells(a: Cell, b: Cell): Cell[] {

@@ -1,7 +1,7 @@
 import opentype from 'opentype.js'
 import { Font as FEFont } from 'fonteditor-core'
 
-export const SIZE = 25
+export const SIZE = 32
 export const LETTERS = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))
 // Printable ASCII punctuation (space excluded: it's always a blank glyph)
 export const PUNCTUATION = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'.split('')
@@ -30,12 +30,12 @@ export const emptyBitmap = (): Bitmap =>
 
 export const isEmpty = (b: Bitmap) => b.every((r) => r.every((v) => !v))
 
-const UPM = 1000
-const ASCENDER = 800
-const DESCENDER = -200
-const PX = UPM / SIZE
-/** Grid line (0-25) where the baseline sits; rows below it are the descender area. */
-export const BASELINE_LINE = ASCENDER / PX
+// Font units: UPM is chosen so every pixel is a whole number of units (1024 / 32 = 32)
+export const UPM = 1024
+export const BASELINE_LINE = 26 // grid line (0-SIZE) where the baseline sits; rows below are the descender
+export const PX = UPM / SIZE
+export const ASCENDER = BASELINE_LINE * PX // 832
+export const DESCENDER = -(SIZE - BASELINE_LINE) * PX // -192
 
 function glyphPath(bitmap: Bitmap): opentype.Path {
   const path = new opentype.Path()

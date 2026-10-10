@@ -1,5 +1,5 @@
 import opentype from 'opentype.js'
-import { BASELINE_LINE, GLYPHS, SIZE, emptyBitmap, type Bitmap, type Glyphs } from './font'
+import { ASCENDER, BASELINE_LINE, DESCENDER, GLYPHS, PX, SIZE, UPM, emptyBitmap, type Bitmap, type Glyphs } from './font'
 
 type Pt = [number, number]
 
@@ -56,12 +56,20 @@ function inside(polys: Pt[][], px: number, py: number): boolean {
   return wind !== 0
 }
 
-function rasterize(glyph: opentype.Glyph, upm: number, scale: number): Bitmap {
+interface Fit { scale: number; centreOnInk: boolean; threshold: number }
+
+function rasterize(glyph: opentype.Glyph, upm: number, fit: Fit): Bitmap {
+  const { scale } = fit
   const bitmap = emptyBitmap()
   const polys = flatten(glyph.getPath(0, 0, upm).commands) // 1 unit = 1 font unit
   if (!polys.length) return bitmap
-  const advance = glyph.advanceWidth ?? upm
-  const offX = (SIZE - advance * scale) / 2 // centre horizontally
+  let offX: number
+  if (fit.centreOnInk) {
+    const bb = glyph.getBoundingBox()
+    offX = SIZE / 2 - ((bb.x1 + bb.x2) / 2) * scale
+  } else {
+    offX = (SIZE - (glyph.advanceWidth ?? upm) * scale) / 2 // centre on the advance box
+  }
   const SUB = 4
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
@@ -73,10 +81,46 @@ function rasterize(glyph: opentype.Glyph, upm: number, scale: number): Bitmap {
           if (inside(polys, (gx - offX) / scale, (gy - BASELINE_LINE) / scale)) hits++
         }
       }
-      bitmap[r][c] = hits >= (SUB * SUB) / 2
+      bitmap[r][c] = hits >= fit.threshold * SUB * SUB
     }
   }
   return bitmap
+}
+
+const median = (xs: number[]) => {
+  const a = [...xs].sort((x, y) => x - y)
+  return a.length ? a[Math.floor(a.length / 2)] : 0
+}
+
+/** Decide how to scale/position a font's glyphs on the grid. */
+function computeFit(font: opentype.Font, chars: string[]): Fit {
+  const upm = font.unitsPerEm
+  // Fonts exported by this app: keep the exact 1:1 mapping so round-trips are lossless
+  if (upm === UPM && font.ascender === ASCENDER && font.descender === DESCENDER) {
+    return { scale: 1 / PX, centreOnInk: false, threshold: 0.5 }
+  }
+
+  const boxes = chars.map((ch) => font.charToGlyph(ch).getBoundingBox()).filter((b) => b.x2 > b.x1 || b.y2 > b.y1)
+  if (!boxes.length) return { scale: 0.02, centreOnInk: true, threshold: 0.3 }
+
+  // Cap height: measure the actual capitals (declared metrics are unreliable in script fonts)
+  const os2 = font.tables.os2 as { sCapHeight?: number } | undefined
+  const capTops = chars.filter((c) => /[A-Z]/.test(c)).map((c) => font.charToGlyph(c).getBoundingBox().y2)
+  const cap = capTops.length >= 5 ? median(capTops) : os2?.sCapHeight || median(capTops) || Math.max(...boxes.map((b) => b.y2))
+
+  // Capitals fill ~16 rows above the baseline (the baseline), leaving headroom
+  let scale = 16 / cap
+  const top = Math.max(...boxes.map((b) => b.y2))
+  const width = Math.max(...boxes.map((b) => b.x2 - b.x1))
+  if (top > 0) scale = Math.min(scale, BASELINE_LINE / top) // nothing above the grid
+  if (width > 0) scale = Math.min(scale, SIZE / width) // nothing wider than the grid
+  // Fit descenders too, but never shrink below 70% for the sake of a few outliers (they'll clip)
+  // Descenders: judge by letters/digits (90th percentile); a few swash/bracket outliers just clip
+  const descs = chars.filter((c) => /[A-Z0-9]/.test(c)).map((c) => Math.max(0, -font.charToGlyph(c).getBoundingBox().y1)).sort((x, y) => x - y)
+  const desc = descs.length ? descs[Math.min(descs.length - 1, Math.floor(descs.length * 0.9))] : 0
+  if (desc > 0) scale = Math.max(Math.min(scale, (SIZE - BASELINE_LINE) / desc), scale * 0.7)
+  // Thin (script/hairline) strokes need a forgiving coverage threshold to survive
+  return { scale, centreOnInk: true, threshold: 0.3 }
 }
 
 export interface ImportResult { glyphs: Glyphs; name: string; found: number }
@@ -93,17 +137,15 @@ export function importFont(buf: ArrayBuffer): ImportResult {
   }
 
   const upm = font.unitsPerEm
-  const asc = font.ascender > 0 ? font.ascender : 0.8 * upm
-  const desc = font.descender < 0 ? -font.descender : 0.2 * upm
-  // Baseline sits on grid line 20: fit ascender above it and descender below it
-  const scale = Math.min(BASELINE_LINE / asc, (SIZE - BASELINE_LINE) / desc)
+  const chars = GLYPHS.filter((ch) => font.charToGlyph(ch)?.index)
+  const fit = computeFit(font, chars)
 
   const glyphs: Glyphs = {}
   let found = 0
   for (const ch of GLYPHS) {
     const g = font.charToGlyph(ch)
     if (!g || g.index === 0) { glyphs[ch] = emptyBitmap(); continue }
-    glyphs[ch] = rasterize(g, upm, scale)
+    glyphs[ch] = rasterize(g, upm, fit)
     found++
   }
   // opentype.js nests names by platform: names.windows.fontFamily.en, etc.

@@ -1,9 +1,24 @@
 import { useEffect, useState } from 'react'
-import { GLYPHS, emptyBitmap, SIZE, type Glyphs } from './font'
+import { ASCENDER, GLYPHS, PX, SIZE, UPM, emptyBitmap, type Bitmap, type Glyphs } from './font'
 import GridView from './GridView'
 import DetailView from './DetailView'
 
 const KEY = 'fontain-glyphs'
+
+/** Resample a drawing from the old 25x25 grid (1000 upm, 40 units/pixel, baseline at row 20) to the current grid. */
+function migrate25(old: Bitmap): Bitmap {
+  const next = emptyBitmap()
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      // centre of this cell in the old 1000-unit coordinate system
+      const x = ((c + 0.5) / SIZE) * 1000
+      const y = ((ASCENDER - (r + 0.5) * PX) / UPM) * 1000
+      const oc = Math.floor(x / 40), or = Math.floor((800 - y) / 40)
+      if (oc >= 0 && oc < 25 && or >= 0 && or < 25) next[r][c] = !!old[or]?.[oc]
+    }
+  }
+  return next
+}
 
 function load(): Glyphs {
   const base = Object.fromEntries(GLYPHS.map((l) => [l, emptyBitmap()])) as Glyphs
@@ -11,7 +26,9 @@ function load(): Glyphs {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Glyphs
     for (const l of GLYPHS) {
       const b = saved[l]
-      if (Array.isArray(b) && b.length === SIZE && b.every((r) => Array.isArray(r) && r.length === SIZE)) base[l] = b
+      const isGrid = (n: number) => Array.isArray(b) && b.length === n && b.every((r) => Array.isArray(r) && r.length === n)
+      if (isGrid(SIZE)) base[l] = b
+      else if (isGrid(25)) base[l] = migrate25(b) // drawings saved before the 32x32 switch
     }
   } catch { /* ignore */ }
   return base
