@@ -20,7 +20,7 @@ function Tile({ ch, glyphs, onOpen }: { ch: string; glyphs: Glyphs; onOpen: (c: 
 }
 
 export default function GridView({ glyphs, onOpen }: { glyphs: Glyphs; onOpen: (c: string) => void }) {
-  const [name, setName] = useState('MyFont')
+  const [name, setName] = useState('')
   const [problems, setProblems] = useState<string[]>([])
 
   const doExport = async (fmt: Format) => {
