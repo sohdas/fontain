@@ -33,7 +33,7 @@ export default function App() {
           onBack={() => setActive(null)}
         />
       ) : (
-        <GridView glyphs={glyphs} onOpen={setActive} />
+        <GridView glyphs={glyphs} onOpen={setActive} onImport={setGlyphs} />
       )}
     </div>
   )

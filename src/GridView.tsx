@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { LETTERS, NUMBERS, PUNCTUATION, exportFont, download, isEmpty, type Format, type Glyphs } from './font'
+import { importFont } from './import'
 import { ValidationError, validateExport } from './validate'
 import GlyphPreview from './GlyphPreview'
 
@@ -19,9 +20,26 @@ function Tile({ ch, glyphs, onOpen }: { ch: string; glyphs: Glyphs; onOpen: (c: 
   )
 }
 
-export default function GridView({ glyphs, onOpen }: { glyphs: Glyphs; onOpen: (c: string) => void }) {
+export default function GridView({
+  glyphs, onOpen, onImport,
+}: { glyphs: Glyphs; onOpen: (c: string) => void; onImport: (g: Glyphs) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState('')
   const [problems, setProblems] = useState<string[]>([])
+
+  const doImport = async (file: File) => {
+    setProblems([])
+    try {
+      const result = importFont(await file.arrayBuffer())
+      if (result.found === 0) throw new Error('No A–Z, 0–9 or punctuation glyphs were found in this font.')
+      const hasWork = Object.values(glyphs).some((b) => !isEmpty(b))
+      if (hasWork && !window.confirm('Importing will replace all of your current drawings. Continue?')) return
+      onImport(result.glyphs)
+      if (result.name) setName(result.name)
+    } catch (e) {
+      setProblems([e instanceof Error ? e.message : String(e)])
+    }
+  }
 
   const doExport = async (fmt: Format) => {
     setProblems([])
@@ -44,6 +62,23 @@ export default function GridView({ glyphs, onOpen }: { glyphs: Glyphs; onOpen: (
             aria-label="Font name"
             className="rounded border border-neutral-300 px-2 py-1"
           />
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".ttf,.otf,.woff"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (f) void doImport(f)
+            }}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="rounded border border-black px-3 py-1 text-sm font-medium hover:bg-neutral-100"
+          >
+            Import font
+          </button>
           {(['ttf', 'otf', 'woff'] as Format[]).map((f) => (
             <button
               key={f}
@@ -57,7 +92,7 @@ export default function GridView({ glyphs, onOpen }: { glyphs: Glyphs; onOpen: (
       </header>
       {problems.length > 0 && (
         <div role="alert" className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">
-          <p className="font-semibold">Export blocked:</p>
+          <p className="font-semibold">Something went wrong:</p>
           <ul className="list-disc pl-5">
             {problems.slice(0, 8).map((p, i) => <li key={i}>{p}</li>)}
             {problems.length > 8 && <li>…and {problems.length - 8} more</li>}
